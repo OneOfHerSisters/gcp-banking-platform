@@ -23,7 +23,6 @@ Deploy to Dataflow:
 import argparse
 import json
 import logging
-from datetime import datetime, timezone
 
 import apache_beam as beam
 from apache_beam.io.gcp.bigquery import WriteToBigQuery, BigQueryDisposition
@@ -33,8 +32,6 @@ from apache_beam.options.pipeline_options import (
     PipelineOptions,
     StandardOptions,
 )
-
-ANOMALY_AMOUNT_THRESHOLD = 5000.0
 
 class ParseTransaction(beam.DoFn):
     """Parse JSON message from Pub/Sub."""
@@ -67,24 +64,27 @@ class ValidateTransaction(beam.DoFn):
 
 class EnrichTransaction(beam.DoFn):
     """Add processing metadata and anomaly flag."""
+    ANOMALY_AMOUNT_THRESHOLD = 5000.0
 
     def process(self, element):
         from datetime import datetime, timezone
         element["processed_at"] = datetime.now(timezone.utc).isoformat()
-        element["is_anomaly"] = element.get("amount", 0) > ANOMALY_AMOUNT_THRESHOLD
+        element["is_anomaly"] = element.get("amount", 0) > self.ANOMALY_AMOUNT_THRESHOLD
         yield element
 
 
 class ExtractAnomalies(beam.DoFn):
     """Extract anomalous transactions into a separate stream."""
+    ANOMALY_AMOUNT_THRESHOLD = 5000.0
 
     def process(self, element):
+        from datetime import datetime, timezone
         if element.get("is_anomaly"):
             yield {
                 "transaction_id":        element["transaction_id"],
                 "user_id":               element["user_id"],
                 "amount":                element["amount"],
-                "anomaly_reason":        f"Amount exceeds threshold of {ANOMALY_AMOUNT_THRESHOLD}",
+                "anomaly_reason":        f"Amount exceeds threshold of {self.ANOMALY_AMOUNT_THRESHOLD}",
                 "transaction_timestamp": element["transaction_timestamp"],
                 "detected_at":           datetime.now(timezone.utc).isoformat(),
             }
