@@ -151,3 +151,9 @@ resource "google_project_iam_member" "pubsub_subscriber" {
   role    = "roles/pubsub.subscriber"
   member  = "serviceAccount:${google_service_account.dataflow.email}"
 }
+
+resource "google_project_iam_member" "sa_user" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountUser"
+  member  = "serviceAccount:${google_service_account.dataflow.email}"
+}
