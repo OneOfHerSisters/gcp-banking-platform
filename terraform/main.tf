@@ -67,18 +67,18 @@ resource "google_bigquery_table" "transactions" {
   clustering = ["transaction_type", "status"]
 
   schema = jsonencode([
-    { name = "transaction_id",        type = "STRING",    mode = "REQUIRED" },
-    { name = "user_id",               type = "STRING",    mode = "REQUIRED" },
-    { name = "amount",                type = "FLOAT64",   mode = "REQUIRED" },
-    { name = "currency",              type = "STRING",    mode = "REQUIRED" },
-    { name = "transaction_type",      type = "STRING",    mode = "REQUIRED" },
-    { name = "status",                type = "STRING",    mode = "REQUIRED" },
-    { name = "merchant_id",           type = "STRING",    mode = "NULLABLE" },
-    { name = "merchant_category",     type = "STRING",    mode = "NULLABLE" },
-    { name = "country",               type = "STRING",    mode = "NULLABLE" },
-    { name = "is_anomaly",            type = "BOOL",      mode = "NULLABLE" },
+    { name = "transaction_id", type = "STRING", mode = "REQUIRED" },
+    { name = "user_id", type = "STRING", mode = "REQUIRED" },
+    { name = "amount", type = "FLOAT64", mode = "REQUIRED" },
+    { name = "currency", type = "STRING", mode = "REQUIRED" },
+    { name = "transaction_type", type = "STRING", mode = "REQUIRED" },
+    { name = "status", type = "STRING", mode = "REQUIRED" },
+    { name = "merchant_id", type = "STRING", mode = "NULLABLE" },
+    { name = "merchant_category", type = "STRING", mode = "NULLABLE" },
+    { name = "country", type = "STRING", mode = "NULLABLE" },
+    { name = "is_anomaly", type = "BOOL", mode = "NULLABLE" },
     { name = "transaction_timestamp", type = "TIMESTAMP", mode = "REQUIRED" },
-    { name = "processed_at",          type = "TIMESTAMP", mode = "NULLABLE" }
+    { name = "processed_at", type = "TIMESTAMP", mode = "NULLABLE" }
   ])
 }
 
@@ -88,12 +88,12 @@ resource "google_bigquery_table" "anomalies" {
   deletion_protection = false
 
   schema = jsonencode([
-    { name = "transaction_id",        type = "STRING",    mode = "REQUIRED" },
-    { name = "user_id",               type = "STRING",    mode = "REQUIRED" },
-    { name = "amount",                type = "FLOAT64",   mode = "REQUIRED" },
-    { name = "anomaly_reason",        type = "STRING",    mode = "NULLABLE" },
+    { name = "transaction_id", type = "STRING", mode = "REQUIRED" },
+    { name = "user_id", type = "STRING", mode = "REQUIRED" },
+    { name = "amount", type = "FLOAT64", mode = "REQUIRED" },
+    { name = "anomaly_reason", type = "STRING", mode = "NULLABLE" },
     { name = "transaction_timestamp", type = "TIMESTAMP", mode = "REQUIRED" },
-    { name = "detected_at",           type = "TIMESTAMP", mode = "REQUIRED" }
+    { name = "detected_at", type = "TIMESTAMP", mode = "REQUIRED" }
   ])
 }
 
@@ -110,7 +110,7 @@ resource "google_pubsub_subscription" "dataflow" {
   topic = google_pubsub_topic.transactions.name
 
   ack_deadline_seconds       = 60
-  message_retention_duration = "86400s"  # 24h
+  message_retention_duration = "86400s" # 24h
 }
 
 # ──────────────────────────────────────────
