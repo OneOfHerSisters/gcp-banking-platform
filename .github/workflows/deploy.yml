@@ -72,4 +72,4 @@ jobs:
             --service_account_email=dataflow-banking-sa@$PROJECT_ID.iam.gserviceaccount.com \
             --job_name=banking-pipeline \
             --streaming \
-            --update
+
