@@ -35,9 +35,6 @@ from apache_beam.options.pipeline_options import (
 )
 
 ANOMALY_AMOUNT_THRESHOLD = 5000.0
-REQUIRED_FIELDS = {"transaction_id", "user_id", "amount", "currency",
-                   "transaction_type", "status", "transaction_timestamp"}
-
 
 class ParseTransaction(beam.DoFn):
     """Parse JSON message from Pub/Sub."""
@@ -52,6 +49,9 @@ class ParseTransaction(beam.DoFn):
 
 class ValidateTransaction(beam.DoFn):
     """Validate required fields and basic business rules."""
+    REQUIRED_FIELDS = {"transaction_id", "user_id", "amount", "currency",
+                   "transaction_type", "status", "transaction_timestamp"}
+
 
     def process(self, element):
         missing = REQUIRED_FIELDS - set(element.keys())
