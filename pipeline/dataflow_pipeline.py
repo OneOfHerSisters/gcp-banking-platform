@@ -52,9 +52,8 @@ class ValidateTransaction(beam.DoFn):
     REQUIRED_FIELDS = {"transaction_id", "user_id", "amount", "currency",
                    "transaction_type", "status", "transaction_timestamp"}
 
-
     def process(self, element):
-        missing = REQUIRED_FIELDS - set(element.keys())
+        missing = self.REQUIRED_FIELDS - set(element.keys())
         if missing:
             logging.warning(f"Transaction {element.get('transaction_id')} missing fields: {missing}")
             return
