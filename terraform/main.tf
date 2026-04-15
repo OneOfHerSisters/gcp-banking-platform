@@ -128,6 +128,12 @@ resource "google_project_iam_member" "dataflow_worker" {
   member  = "serviceAccount:${google_service_account.dataflow.email}"
 }
 
+resource "google_project_iam_member" "dataflow_developer" {
+  project = var.project_id
+  role    = "roles/dataflow.developer"
+  member  = "serviceAccount:${google_service_account.dataflow.email}"
+}
+
 resource "google_project_iam_member" "bigquery_editor" {
   project = var.project_id
   role    = "roles/bigquery.dataEditor"
