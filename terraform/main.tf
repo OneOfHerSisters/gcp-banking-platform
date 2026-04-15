@@ -23,8 +23,12 @@ resource "google_storage_bucket" "raw" {
   force_destroy = true
 
   lifecycle_rule {
-    condition { age = 30 }
-    action    { type = "Delete" }
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
   }
 }
 
