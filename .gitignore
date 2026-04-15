@@ -1,0 +1,21 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# GCP credentials - NEVER commit these
+*.json
+service-account*.json
+
+# IDE
+.idea/
+.vscode/
