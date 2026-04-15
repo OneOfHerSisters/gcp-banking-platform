@@ -69,6 +69,7 @@ class EnrichTransaction(beam.DoFn):
     """Add processing metadata and anomaly flag."""
 
     def process(self, element):
+        from datetime import datetime, timezone
         element["processed_at"] = datetime.now(timezone.utc).isoformat()
         element["is_anomaly"] = element.get("amount", 0) > ANOMALY_AMOUNT_THRESHOLD
         yield element
