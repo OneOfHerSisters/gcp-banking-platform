@@ -23,6 +23,7 @@ Deploy to Dataflow:
 import argparse
 import json
 import logging
+import os
 
 import apache_beam as beam
 from apache_beam.io.gcp.bigquery import WriteToBigQuery, BigQueryDisposition
@@ -64,18 +65,20 @@ class ValidateTransaction(beam.DoFn):
 
 class EnrichTransaction(beam.DoFn):
     """Add processing metadata and anomaly flag."""
-    ANOMALY_AMOUNT_THRESHOLD = 5000.0
+    def __init__(self, anomaly_amount_threshold):
+        self.anomaly_amount_threshold = anomaly_amount_threshold
 
     def process(self, element):
         from datetime import datetime, timezone
         element["processed_at"] = datetime.now(timezone.utc).isoformat()
-        element["is_anomaly"] = element.get("amount", 0) > self.ANOMALY_AMOUNT_THRESHOLD
+        element["is_anomaly"] = element.get("amount", 0) > self.anomaly_amount_threshold
         yield element
 
 
 class ExtractAnomalies(beam.DoFn):
     """Extract anomalous transactions into a separate stream."""
-    ANOMALY_AMOUNT_THRESHOLD = 5000.0
+    def __init__(self, anomaly_amount_threshold):
+        self.anomaly_amount_threshold = anomaly_amount_threshold
 
     def process(self, element):
         from datetime import datetime, timezone
@@ -84,7 +87,7 @@ class ExtractAnomalies(beam.DoFn):
                 "transaction_id":        element["transaction_id"],
                 "user_id":               element["user_id"],
                 "amount":                element["amount"],
-                "anomaly_reason":        f"Amount exceeds threshold of {self.ANOMALY_AMOUNT_THRESHOLD}",
+                "anomaly_reason":        f"Amount exceeds threshold of {self.anomaly_amount_threshold}",
                 "transaction_timestamp": element["transaction_timestamp"],
                 "detected_at":           datetime.now(timezone.utc).isoformat(),
             }
@@ -93,9 +96,14 @@ class ExtractAnomalies(beam.DoFn):
 def run(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_subscription",    required=True)
-    parser.add_argument("--bq_dataset",            default="banking_platform")
-    parser.add_argument("--bq_transactions_table", default="transactions")
-    parser.add_argument("--bq_anomalies_table",    default="anomalies")
+    parser.add_argument("--bq_dataset",            default=os.getenv("BQ_DATASET", "banking_platform"))
+    parser.add_argument("--bq_transactions_table", default=os.getenv("BQ_TRANSACTIONS_TABLE", "transactions"))
+    parser.add_argument("--bq_anomalies_table",    default=os.getenv("BQ_ANOMALIES_TABLE", "anomalies"))
+    parser.add_argument(
+        "--anomaly_amount_threshold",
+        type=float,
+        default=float(os.getenv("ANOMALY_AMOUNT_THRESHOLD", "5000.0")),
+    )
 
     known_args, pipeline_args = parser.parse_known_args(argv)
     options = PipelineOptions(pipeline_args)
@@ -113,7 +121,7 @@ def run(argv=None):
             | "Read from Pub/Sub" >> ReadFromPubSub(subscription=known_args.input_subscription)
             | "Parse JSON"        >> beam.ParDo(ParseTransaction())
             | "Validate"          >> beam.ParDo(ValidateTransaction())
-            | "Enrich"            >> beam.ParDo(EnrichTransaction())
+            | "Enrich"            >> beam.ParDo(EnrichTransaction(known_args.anomaly_amount_threshold))
         )
 
         transactions | "Write transactions to BigQuery" >> WriteToBigQuery(
@@ -124,7 +132,7 @@ def run(argv=None):
 
         (
             transactions
-            | "Extract anomalies"           >> beam.ParDo(ExtractAnomalies())
+            | "Extract anomalies"           >> beam.ParDo(ExtractAnomalies(known_args.anomaly_amount_threshold))
             | "Write anomalies to BigQuery" >> WriteToBigQuery(
                 table=anomalies_table,
                 write_disposition=BigQueryDisposition.WRITE_APPEND,

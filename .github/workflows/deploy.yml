@@ -69,6 +69,7 @@ jobs:
             --region=$REGION \
             --temp_location=gs://$PROJECT_ID-dataflow-temp/temp \
             --input_subscription=projects/$PROJECT_ID/subscriptions/banking-transactions-dataflow \
+            --anomaly_amount_threshold=1000 \
             --service_account_email=dataflow-banking-sa@$PROJECT_ID.iam.gserviceaccount.com \
             --job_name=banking-pipeline \
             --streaming \
