@@ -31,6 +31,8 @@ jobs:
 
       - name: Terraform validate
         working-directory: terraform
+        env:
+          TF_VAR_project_id: "banking-platform-2026"
         run: terraform validate
 
   deploy-pipeline:
