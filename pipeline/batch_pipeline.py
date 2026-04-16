@@ -35,6 +35,34 @@ from apache_beam.options.pipeline_options import (
     StandardOptions,
 )
 
+TRANSACTIONS_SCHEMA = {
+    "fields": [
+        {"name": "transaction_id",        "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "user_id",               "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "amount",                "type": "FLOAT",     "mode": "REQUIRED"},
+        {"name": "currency",              "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "transaction_type",      "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "status",                "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "merchant_id",           "type": "STRING",    "mode": "NULLABLE"},
+        {"name": "merchant_category",     "type": "STRING",    "mode": "NULLABLE"},
+        {"name": "country",               "type": "STRING",    "mode": "NULLABLE"},
+        {"name": "is_anomaly",            "type": "BOOLEAN",   "mode": "NULLABLE"},
+        {"name": "transaction_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"},
+        {"name": "processed_at",          "type": "TIMESTAMP", "mode": "NULLABLE"},
+    ]
+}
+
+ANOMALIES_SCHEMA = {
+    "fields": [
+        {"name": "transaction_id",        "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "user_id",               "type": "STRING",    "mode": "REQUIRED"},
+        {"name": "amount",                "type": "FLOAT",     "mode": "REQUIRED"},
+        {"name": "anomaly_reason",        "type": "STRING",    "mode": "NULLABLE"},
+        {"name": "transaction_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"},
+        {"name": "detected_at",           "type": "TIMESTAMP", "mode": "REQUIRED"},
+    ]
+}
+
 
 class ParseTransaction(beam.DoFn):
     """Parse JSON line from a GCS text file."""
@@ -172,6 +200,7 @@ def run(argv=None):
 
         transactions | "Write transactions to BigQuery" >> WriteToBigQuery(
             table=transactions_table,
+            schema=TRANSACTIONS_SCHEMA,
             write_disposition=BigQueryDisposition.WRITE_APPEND,
             create_disposition=BigQueryDisposition.CREATE_NEVER,
         )
@@ -181,6 +210,7 @@ def run(argv=None):
             | "Extract anomalies"           >> beam.ParDo(ExtractAnomalies(known_args.anomaly_amount_threshold))
             | "Write anomalies to BigQuery" >> WriteToBigQuery(
                 table=anomalies_table,
+                schema=ANOMALIES_SCHEMA,
                 write_disposition=BigQueryDisposition.WRITE_APPEND,
                 create_disposition=BigQueryDisposition.CREATE_NEVER,
             )
