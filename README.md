@@ -142,6 +142,8 @@ gcloud dataflow jobs cancel JOB_ID --region europe-west1
 Open `sql/analytics.sql` in BigQuery Console. Six queries included:
 transaction volume by hour, top users, breakdown by type and status, z-score anomaly detection, geographic distribution, pipeline processing lag.
 
+Looker Studio dashboard: https://datastudio.google.com/reporting/c1efa3fb-a4a0-47a5-9476-99161ac605c7
+
 ## IAM — service account permissions
 
 Dataflow jobs run under a dedicated service account `dataflow-banking-sa`, not under a personal account. This follows the principle of least privilege — the account only has the permissions it actually needs.
