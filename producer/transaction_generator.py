@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import random
 import uuid
 from datetime import datetime, timezone
@@ -30,10 +31,10 @@ CURRENCIES = ["USD", "EUR", "GBP", "PLN", "CHF"]
 MERCHANT_CATEGORIES = ["grocery", "electronics", "restaurant", "travel", "fuel", "pharmacy"]
 COUNTRIES = ["US", "DE", "PL", "GB", "FR", "NL", "UA"]
 
-ANOMALY_THRESHOLD = 5000.0
+DEFAULT_ANOMALY_THRESHOLD = float(os.getenv("ANOMALY_AMOUNT_THRESHOLD", "1000.0"))
 
 
-def generate_transaction() -> dict[str, Any]:
+def generate_transaction(anomaly_threshold: float) -> dict[str, Any]:
     amount = round(random.lognormvariate(4.0, 1.5), 2)  # realistic distribution
     amount = min(amount, 50000.0)
 
@@ -47,12 +48,17 @@ def generate_transaction() -> dict[str, Any]:
         "merchant_id":           f"merchant_{random.randint(100, 999)}",
         "merchant_category":     random.choice(MERCHANT_CATEGORIES),
         "country":               random.choice(COUNTRIES),
-        "is_anomaly":            amount > ANOMALY_THRESHOLD,
+        "is_anomaly":            amount > anomaly_threshold,
         "transaction_timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
-def stream_to_pubsub(project_id: str, topic_name: str, rate_per_second: int = 5) -> None:
+def stream_to_pubsub(
+    project_id: str,
+    topic_name: str,
+    rate_per_second: int = 5,
+    anomaly_threshold: float = DEFAULT_ANOMALY_THRESHOLD,
+) -> None:
     publisher = pubsub_v1.PublisherClient()
     topic_path = publisher.topic_path(project_id, topic_name)
 
@@ -61,15 +67,20 @@ def stream_to_pubsub(project_id: str, topic_name: str, rate_per_second: int = 5)
 
     while True:
         for _ in range(rate_per_second):
-            tx = generate_transaction()
+            tx = generate_transaction(anomaly_threshold)
             data = json.dumps(tx).encode("utf-8")
             future = publisher.publish(topic_path, data)
             print(f"Published {tx['transaction_id']} | {tx['amount']} {tx['currency']} | anomaly={tx['is_anomaly']}")
         time.sleep(1)
 
 
-def batch_to_gcs(project_id: str, bucket_name: str, count: int = 1000) -> None:
-    transactions = [generate_transaction() for _ in range(count)]
+def batch_to_gcs(
+    project_id: str,
+    bucket_name: str,
+    count: int = 1000,
+    anomaly_threshold: float = DEFAULT_ANOMALY_THRESHOLD,
+) -> None:
+    transactions = [generate_transaction(anomaly_threshold) for _ in range(count)]
 
     client = storage.Client(project=project_id)
     bucket = client.bucket(bucket_name)
@@ -92,10 +103,16 @@ if __name__ == "__main__":
     parser.add_argument("--bucket",  help="GCS bucket name for batch mode")
     parser.add_argument("--count",   type=int, default=1000, help="Number of transactions for batch mode")
     parser.add_argument("--rate",    type=int, default=5, help="Transactions per second for stream mode")
+    parser.add_argument(
+        "--anomaly_amount_threshold",
+        type=float,
+        default=DEFAULT_ANOMALY_THRESHOLD,
+        help="Amount threshold above which a generated transaction is marked as anomaly",
+    )
     args = parser.parse_args()
 
     if args.mode == "stream":
-        stream_to_pubsub(args.project, args.topic, args.rate)
+        stream_to_pubsub(args.project, args.topic, args.rate, args.anomaly_amount_threshold)
     else:
         bucket = args.bucket or f"{args.project}-transactions-raw"
-        batch_to_gcs(args.project, bucket, args.count)
+        batch_to_gcs(args.project, bucket, args.count, args.anomaly_amount_threshold)

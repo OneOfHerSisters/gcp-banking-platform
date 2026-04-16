@@ -1,76 +1,62 @@
 # GCP Banking Data Platform
 
-Cloud-native data platform for real-time and batch processing of banking transactions using Google Cloud Platform.
+A cloud-native platform for processing and analysing banking transactions on GCP.
+Supports two processing modes: real-time streaming (Pub/Sub → Dataflow) and batch file processing (GCS → Dataflow).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Data Sources                              │
-│                                                                  │
-│  Python Producer ──► Pub/Sub Topic ──► Dataflow (Beam)          │
-│  Python Producer ──► GCS (raw/)    ──► (batch jobs)             │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               ▼
-                    ┌──────────────────┐
-                    │    BigQuery      │
-                    │  ┌────────────┐  │
-                    │  │transactions│  │
-                    │  │ (partitioned│  │
-                    │  │  by day)   │  │
-                    │  └────────────┘  │
-                    │  ┌────────────┐  │
-                    │  │ anomalies  │  │
-                    │  └────────────┘  │
-                    └────────┬─────────┘
-                             │
-                             ▼
-                    Looker Studio Dashboard
+Python producer
+    ├── stream → Pub/Sub → Dataflow (streaming_pipeline.py) → BigQuery
+    └── batch  → GCS     → Dataflow (batch_pipeline.py)    → BigQuery
+                                                                  ↓
+                                                         Looker Studio
 ```
 
-## Tech Stack
+## Tech stack
 
 | Layer | Technology |
 |---|---|
 | Infrastructure | Terraform |
-| Ingestion (stream) | Python → Pub/Sub |
+| Ingestion (streaming) | Python → Pub/Sub |
 | Ingestion (batch) | Python → GCS |
 | Processing | Apache Beam on Dataflow |
-| Storage | BigQuery (partitioned + clustered) |
+| Storage | BigQuery (partitioning + clustering) |
 | Analytics | BigQuery SQL + Looker Studio |
 | CI/CD | GitHub Actions |
 
-## Project Structure
+## Project structure
 
 ```
 .
-├── terraform/                  # Infrastructure as Code
-│   ├── main.tf                 # GCS, BigQuery, Pub/Sub, IAM
+├── terraform/
+│   ├── main.tf              # GCS, BigQuery, Pub/Sub, IAM
 │   ├── variables.tf
-│   └── outputs.tf
-├── producer/                   # Transaction generator
+│   ├── outputs.tf
+│   └── terraform.tfvars.example
+├── producer/
 │   ├── transaction_generator.py
 │   └── requirements.txt
-├── pipeline/                   # Apache Beam pipeline
-│   ├── dataflow_pipeline.py
+├── pipeline/
+│   ├── streaming_pipeline.py  # Pub/Sub → BigQuery (run manually)
+│   ├── batch_pipeline.py      # GCS → BigQuery (deployed via CI/CD on push to main)
 │   └── requirements.txt
-├── sql/                        # Analytics queries
+├── sql/
 │   └── analytics.sql
 └── .github/workflows/
-    └── deploy.yml              # CI/CD
+    └── deploy.yml
 ```
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
 - GCP account with billing enabled
-- `gcloud` CLI installed and authenticated
+- `gcloud` CLI
 - Terraform >= 1.5
 - Python 3.11+
 
-### 1. Enable GCP APIs
+### 1. Enable APIs
 
 ```bash
 gcloud services enable \
@@ -86,7 +72,7 @@ gcloud services enable \
 ```bash
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your project_id
+# fill in your project_id in terraform.tfvars
 
 terraform init
 terraform plan
@@ -99,73 +85,123 @@ terraform apply
 cd producer
 pip install -r requirements.txt
 
-# Stream mode (Pub/Sub)
+# stream to Pub/Sub
 python transaction_generator.py --mode stream --project YOUR_PROJECT_ID
 
-# Batch mode (GCS)
+# write batch file to GCS
 python transaction_generator.py --mode batch --project YOUR_PROJECT_ID --count 5000
 ```
 
-### 4. Run the Dataflow pipeline
+### 4. Run the batch pipeline
 
 ```bash
 cd pipeline
 pip install -r requirements.txt
 
-# Local test (DirectRunner)
-python dataflow_pipeline.py \
+# local test with DirectRunner (free)
+python batch_pipeline.py \
   --project YOUR_PROJECT_ID \
   --runner DirectRunner \
-  --input_subscription projects/YOUR_PROJECT_ID/subscriptions/banking-transactions-dataflow
+  --input_path "gs://YOUR_PROJECT_ID-transactions-raw/batch/*.json"
 
-# Deploy to Dataflow
-python dataflow_pipeline.py \
+# deploy to Dataflow
+python batch_pipeline.py \
   --project YOUR_PROJECT_ID \
   --runner DataflowRunner \
   --region europe-west1 \
   --temp_location gs://YOUR_PROJECT_ID-dataflow-temp/temp \
-  --input_subscription projects/YOUR_PROJECT_ID/subscriptions/banking-transactions-dataflow \
-  --streaming
+  --service_account_email dataflow-banking-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+  --input_path "gs://YOUR_PROJECT_ID-transactions-raw/batch/*.json" \
+  --job_name banking-batch-pipeline
 ```
 
-### 5. Run analytics queries
+### 5. Run the streaming pipeline (manual)
 
-Open `sql/analytics.sql` in BigQuery Console and run the queries against your dataset.
-
-## Key Design Decisions
-
-**Partitioned + clustered BigQuery tables** — transactions are partitioned by day and clustered by `transaction_type` and `status`. This reduces query cost significantly when filtering by date range (common in analytics).
-
-**Separate anomalies table** — anomalies are written to a dedicated table in the same pipeline step, enabling fast alerting queries without scanning the full transactions table.
-
-**Lognormal amount distribution** — the generator uses `lognormvariate` to simulate realistic transaction amounts (most transactions are small, a few are large), rather than uniform random values.
-
-**DirectRunner for local testing** — the pipeline can be tested locally without deploying to Dataflow, which saves cost during development.
-
-## Cost Management
-
-> Always destroy resources when not in use.
+The streaming pipeline runs indefinitely — start it only when you need to test real-time processing.
 
 ```bash
-# Destroy all GCP resources
-cd terraform && terraform destroy
-
-# Dataflow jobs must be stopped manually in GCP Console or via gcloud
-gcloud dataflow jobs cancel JOB_ID --region=europe-west1
+python streaming_pipeline.py \
+  --project YOUR_PROJECT_ID \
+  --runner DataflowRunner \
+  --region europe-west1 \
+  --temp_location gs://YOUR_PROJECT_ID-dataflow-temp/temp \
+  --service_account_email dataflow-banking-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+  --input_subscription projects/YOUR_PROJECT_ID/subscriptions/banking-transactions-dataflow \
+  --job_name banking-streaming-pipeline \
+  --streaming \
+  --no_wait_until_finish
 ```
 
-Estimated cost for active development session (~2h):
-- Dataflow (n1-standard-2): ~$0.10
-- BigQuery queries: ~$0.00 (under free tier)
-- Pub/Sub: ~$0.00 (under free tier)
-- GCS: ~$0.01
+Stop a running job:
+```bash
+gcloud dataflow jobs cancel JOB_ID --region europe-west1
+```
+
+### 6. Analytics
+
+Open `sql/analytics.sql` in BigQuery Console. Six queries included:
+transaction volume by hour, top users, breakdown by type and status, z-score anomaly detection, geographic distribution, pipeline processing lag.
+
+## IAM — service account permissions
+
+Dataflow jobs run under a dedicated service account `dataflow-banking-sa`, not under a personal account. This follows the principle of least privilege — the account only has the permissions it actually needs.
+
+| Role | Why | Scope |
+|---|---|---|
+| `roles/dataflow.worker` | Run Dataflow workers | Project |
+| `roles/dataflow.developer` | Create and monitor jobs | Project |
+| `roles/bigquery.dataEditor` | Write data to BigQuery tables | Project |
+| `roles/storage.objectAdmin` | Read and write files in GCS | Project |
+| `roles/pubsub.subscriber` | Read messages from the queue | Project + Subscription |
+| `roles/iam.serviceAccountUser` | Deploy jobs as the SA via CI/CD | Project |
+
+**What could be tightened in production:**
+
+`storage.objectAdmin` grants the ability to delete objects, which the pipeline doesn't need. In production, `storage.objectCreator` + `storage.objectViewer` would be sufficient. The broader role was used here for development convenience.
+
+`iam.serviceAccountUser` is granted at project level, meaning the SA can act as any other service account in the project. The correct approach is to grant it at the level of the specific service account. Acceptable for a learning project, not for production.
+
+`pubsub.subscriber` is granted twice — at project level via Terraform and at subscription level via `gcloud` manually. This is redundant. Ideally it should only be granted at subscription level, which is the more precise scope.
+
+## Key design decisions
+
+**BigQuery partitioning by day** — the `transactions` table is partitioned on `transaction_timestamp`. A query with a date filter only scans the relevant partitions instead of the full table. At scale this reduces query cost significantly.
+
+**Clustering on `transaction_type` and `status`** — within each partition, data is physically sorted by these columns. BigQuery skips irrelevant blocks when filtering. Free to set up, always worth doing on columns you filter by frequently.
+
+**Separate `anomalies` table** — anomalous transactions are written to a dedicated table in the same pipeline step, in parallel. This makes alerting queries fast — no need to scan the full transactions table.
+
+**Pub/Sub as a buffer** — if Dataflow goes down or restarts, messages are not lost. They are retained in the queue for 24 hours (`message_retention_duration = "86400s"`), which is what makes the streaming architecture reliable.
+
+**Two separate pipelines** — streaming and batch are intentionally split. The batch pipeline has a clear start and end, which makes it suitable for CI/CD and straightforward to monitor. The streaming pipeline runs indefinitely and is started manually when real-time processing is needed.
 
 ## CI/CD
 
-GitHub Actions runs on every push:
-- **PR**: `terraform fmt` check + `terraform validate`
-- **main**: deploys/updates the Dataflow streaming job
+| Trigger | Job | What it does |
+|---|---|---|
+| Every PR | `terraform-validate` | `terraform fmt -check` + `terraform validate` |
+| Push to `main` | `terraform-validate` + `deploy-batch-pipeline` | Validates Terraform, deploys the batch Dataflow job, waits for it to finish |
+
+The streaming pipeline is intentionally excluded from CI/CD.
 
 Required GitHub secrets:
 - `GCP_PROJECT_ID`
-- `GCP_SA_KEY` (service account JSON key with Dataflow + BQ + GCS permissions)
+- `GCP_SA_KEY` — service account JSON key
+
+## Cost management
+
+Always destroy resources when you're done working:
+
+```bash
+# remove everything Terraform created
+cd terraform && terraform destroy
+
+# cancel a running Dataflow job
+gcloud dataflow jobs cancel JOB_ID --region europe-west1
+```
+
+Estimated cost for an active development session (~2 hours):
+- Dataflow (n1-standard-2): ~$0.10
+- BigQuery: $0 (first 10 GB/month free)
+- Pub/Sub: $0 (first 10 GB/month free)
+- GCS: ~$0.01

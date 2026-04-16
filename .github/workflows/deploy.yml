@@ -9,6 +9,7 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: europe-west1
+  ANOMALY_AMOUNT_THRESHOLD: 1000
 
 jobs:
   terraform-validate:
@@ -35,8 +36,8 @@ jobs:
           TF_VAR_project_id: "banking-platform-2026"
         run: terraform validate
 
-  deploy-pipeline:
-    name: Deploy Dataflow pipeline
+  deploy-batch-pipeline:
+    name: Deploy Dataflow batch pipeline
     runs-on: ubuntu-latest
     needs: terraform-validate
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -60,17 +61,21 @@ jobs:
         working-directory: pipeline
         run: pip install -r requirements.txt
 
-      - name: Deploy Dataflow pipeline
+      - name: Deploy Dataflow batch pipeline
         working-directory: pipeline
         run: |
-          python dataflow_pipeline.py \
+          python batch_pipeline.py \
             --project=$PROJECT_ID \
             --runner=DataflowRunner \
             --region=$REGION \
             --temp_location=gs://$PROJECT_ID-dataflow-temp/temp \
-            --input_subscription=projects/$PROJECT_ID/subscriptions/banking-transactions-dataflow \
-            --anomaly_amount_threshold=1000 \
+            --input_path=gs://$PROJECT_ID-transactions-raw/batch/*.json \
+            --anomaly_amount_threshold=$ANOMALY_AMOUNT_THRESHOLD \
             --service_account_email=dataflow-banking-sa@$PROJECT_ID.iam.gserviceaccount.com \
-            --job_name=banking-pipeline \
-            --streaming \
-            --no_wait_until_finish
+            --job_name=banking-batch-pipeline
+
+      - name: Move processed files to batch/processed/
+        run: |
+          gsutil -m mv \
+            gs://$PROJECT_ID-transactions-raw/batch/*.json \
+            gs://$PROJECT_ID-transactions-raw/batch/processed/

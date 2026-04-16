@@ -146,10 +146,10 @@ resource "google_project_iam_member" "storage_admin" {
   member  = "serviceAccount:${google_service_account.dataflow.email}"
 }
 
-resource "google_project_iam_member" "pubsub_subscriber" {
-  project = var.project_id
-  role    = "roles/pubsub.subscriber"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
+resource "google_pubsub_subscription_iam_member" "dataflow_subscriber" {
+  subscription = google_pubsub_subscription.dataflow.name
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:${google_service_account.dataflow.email}"
 }
 
 resource "google_project_iam_member" "sa_user" {

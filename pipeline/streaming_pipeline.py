@@ -3,20 +3,20 @@ Dataflow streaming pipeline.
 Reads transactions from Pub/Sub → validates → flags anomalies → writes to BigQuery.
 
 Run locally (DirectRunner, for testing):
-    python dataflow_pipeline.py \
+    python streaming_pipeline.py \
         --runner DirectRunner \
         --project YOUR_PROJECT_ID \
         --input_subscription projects/YOUR_PROJECT_ID/subscriptions/banking-transactions-dataflow
 
-Deploy to Dataflow:
-    python dataflow_pipeline.py \
+Deploy to Dataflow (run manually):
+    python streaming_pipeline.py \
         --runner DataflowRunner \
         --project YOUR_PROJECT_ID \
         --region europe-west1 \
         --temp_location gs://YOUR_PROJECT_ID-dataflow-temp/temp \
         --service_account_email dataflow-banking-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
         --input_subscription projects/YOUR_PROJECT_ID/subscriptions/banking-transactions-dataflow \
-        --job_name banking-pipeline \
+        --job_name banking-streaming-pipeline \
         --streaming
 """
 
@@ -102,7 +102,7 @@ def run(argv=None):
     parser.add_argument(
         "--anomaly_amount_threshold",
         type=float,
-        default=float(os.getenv("ANOMALY_AMOUNT_THRESHOLD", "5000.0")),
+        default=float(os.getenv("ANOMALY_AMOUNT_THRESHOLD", "1000.0")),
     )
 
     known_args, pipeline_args = parser.parse_known_args(argv)
