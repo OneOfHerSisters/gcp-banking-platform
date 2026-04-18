@@ -163,3 +163,90 @@ resource "google_project_iam_member" "bigquery_job_user" {
   role    = "roles/bigquery.jobUser"
   member  = "serviceAccount:${google_service_account.dataflow.email}"
 }
+
+resource "google_project_iam_member" "run_developer" {
+  project = var.project_id
+  role    = "roles/run.developer"
+  member  = "serviceAccount:${google_service_account.dataflow.email}"
+}
+
+resource "google_project_iam_member" "artifact_registry_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.dataflow.email}"
+}
+
+# ──────────────────────────────────────────
+# Artifact Registry
+# ──────────────────────────────────────────
+
+resource "google_artifact_registry_repository" "api" {
+  location      = var.region
+  repository_id = "banking-platform"
+  format        = "DOCKER"
+}
+
+# ──────────────────────────────────────────
+# Service Account for Cloud Run API
+# ──────────────────────────────────────────
+
+resource "google_service_account" "api" {
+  account_id   = "finpipe-api-sa"
+  display_name = "FinPipe API Service Account"
+}
+
+resource "google_project_iam_member" "api_bq_viewer" {
+  project = var.project_id
+  role    = "roles/bigquery.dataViewer"
+  member  = "serviceAccount:${google_service_account.api.email}"
+}
+
+resource "google_project_iam_member" "api_bq_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.api.email}"
+}
+
+resource "google_project_iam_member" "api_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.api.email}"
+}
+
+# ──────────────────────────────────────────
+# Cloud Run
+# ──────────────────────────────────────────
+
+resource "google_cloud_run_v2_service" "api" {
+  name     = "banking-api"
+  location = var.region
+
+  template {
+    service_account = google_service_account.api.email
+
+    containers {
+      # Placeholder image — replaced by CI/CD on every push to main
+      image = "gcr.io/cloudrun/placeholder"
+
+      env {
+        name  = "PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "PUBSUB_TOPIC"
+        value = google_pubsub_topic.transactions.name
+      }
+      env {
+        name  = "BQ_DATASET"
+        value = google_bigquery_dataset.banking.dataset_id
+      }
+    }
+  }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "public" {
+  location = google_cloud_run_v2_service.api.location
+  name     = google_cloud_run_v2_service.api.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
