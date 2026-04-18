@@ -1,7 +1,7 @@
 # GCP Banking Data Platform
 
 A cloud-native platform for processing and analysing banking transactions on GCP.
-Supports two processing modes: real-time streaming (Pub/Sub → Dataflow) and batch file processing (GCS → Dataflow).
+Supports real-time streaming, batch file processing, and a REST API for querying and ingesting transactions.
 
 ## Architecture
 
@@ -9,6 +9,9 @@ Supports two processing modes: real-time streaming (Pub/Sub → Dataflow) and ba
 Python producer
     ├── stream → Pub/Sub → Dataflow (streaming_pipeline.py) → BigQuery
     └── batch  → GCS     → Dataflow (batch_pipeline.py)    → BigQuery
+                                                                  ↓
+HTTP clients → Cloud Run (banking-api)  ──────────────────► BigQuery
+                    └── POST /transactions → Pub/Sub ──────► Dataflow
                                                                   ↓
                                                          Looker Studio
 ```
@@ -21,7 +24,9 @@ Python producer
 | Ingestion (streaming) | Python → Pub/Sub |
 | Ingestion (batch) | Python → GCS |
 | Processing | Apache Beam on Dataflow |
+| API | FastAPI on Cloud Run |
 | Storage | BigQuery (partitioning + clustering) |
+| Container registry | Artifact Registry |
 | Analytics | BigQuery SQL + Looker Studio |
 | CI/CD | GitHub Actions |
 
@@ -30,7 +35,7 @@ Python producer
 ```
 .
 ├── terraform/
-│   ├── main.tf              # GCS, BigQuery, Pub/Sub, IAM
+│   ├── main.tf              # GCS, BigQuery, Pub/Sub, Artifact Registry, Cloud Run, IAM
 │   ├── variables.tf
 │   ├── outputs.tf
 │   └── terraform.tfvars.example
@@ -41,6 +46,10 @@ Python producer
 │   ├── streaming_pipeline.py  # Pub/Sub → BigQuery (run manually)
 │   ├── batch_pipeline.py      # GCS → BigQuery (deployed via CI/CD on push to main)
 │   └── requirements.txt
+├── api/
+│   ├── main.py                # FastAPI app
+│   ├── requirements.txt
+│   └── Dockerfile
 ├── sql/
 │   └── analytics.sql
 └── .github/workflows/
@@ -55,6 +64,7 @@ Python producer
 - `gcloud` CLI
 - Terraform >= 1.5
 - Python 3.11+
+- Docker
 
 ### 1. Enable APIs
 
@@ -64,6 +74,8 @@ gcloud services enable \
   bigquery.googleapis.com \
   pubsub.googleapis.com \
   storage.googleapis.com \
+  run.googleapis.com \
+  artifactregistry.googleapis.com \
   --project YOUR_PROJECT_ID
 ```
 
@@ -94,6 +106,8 @@ python transaction_generator.py --mode batch --project YOUR_PROJECT_ID --count 5
 
 ### 4. Run the batch pipeline
 
+Runs automatically via CI/CD on every push to `main`. To run manually:
+
 ```bash
 cd pipeline
 pip install -r requirements.txt
@@ -115,11 +129,16 @@ python batch_pipeline.py \
   --job_name banking-batch-pipeline
 ```
 
+If there are no files in `batch/`, the pipeline exits successfully with a log message.
+Processed files are moved to `batch/processed/` automatically after each run.
+
 ### 5. Run the streaming pipeline (manual)
 
-The streaming pipeline runs indefinitely — start it only when you need to test real-time processing.
+The streaming pipeline runs indefinitely — start it only when you need real-time processing.
 
 ```bash
+cd pipeline
+
 python streaming_pipeline.py \
   --project YOUR_PROJECT_ID \
   --runner DataflowRunner \
@@ -133,37 +152,76 @@ python streaming_pipeline.py \
 ```
 
 Stop a running job:
+
 ```bash
 gcloud dataflow jobs cancel JOB_ID --region europe-west1
 ```
 
-### 6. Analytics
+### 6. API (Cloud Run)
+
+Deployed automatically via CI/CD on every push to `main`.
+
+Base URL: `https://banking-api-xxxx-ew.a.run.app` (shown in GCP Console → Cloud Run → banking-api)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `POST` | `/transactions` | Publish a transaction to Pub/Sub |
+| `GET` | `/transactions` | Query recent transactions from BigQuery |
+| `GET` | `/anomalies` | Query recent anomalies from BigQuery |
+| `GET` | `/stats` | Aggregate stats: count, total amount, anomaly rate |
+
+Query parameters for `GET /transactions`: `limit` (default 50, max 500), `user_id`, `transaction_type`.
+
+Example:
+
+```bash
+# publish a transaction
+curl -X POST https://YOUR_API_URL/transactions \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"u1","amount":250.0,"currency":"USD","transaction_type":"purchase","status":"completed"}'
+
+# get last 10 anomalies
+curl "https://YOUR_API_URL/anomalies?limit=10"
+
+# stats
+curl https://YOUR_API_URL/stats
+```
+
+### 7. Analytics
 
 Open `sql/analytics.sql` in BigQuery Console. Six queries included:
 transaction volume by hour, top users, breakdown by type and status, z-score anomaly detection, geographic distribution, pipeline processing lag.
 
 Looker Studio dashboard: https://datastudio.google.com/reporting/c1efa3fb-a4a0-47a5-9476-99161ac605c7
 
-## IAM — service account permissions
+## IAM — service accounts
 
-Dataflow jobs run under a dedicated service account `dataflow-banking-sa`, not under a personal account. This follows the principle of least privilege — the account only has the permissions it actually needs.
+### `dataflow-banking-sa`
 
-| Role | Why | Scope |
-|---|---|---|
-| `roles/dataflow.worker` | Run Dataflow workers | Project |
-| `roles/dataflow.developer` | Create and monitor jobs | Project |
-| `roles/bigquery.dataEditor` | Write data to BigQuery tables | Project |
-| `roles/storage.objectAdmin` | Read and write files in GCS | Project |
-| `roles/pubsub.subscriber` | Read messages from the queue | Project + Subscription |
-| `roles/iam.serviceAccountUser` | Deploy jobs as the SA via CI/CD | Project |
+Runs Dataflow jobs and deploys from CI/CD.
 
-**What could be tightened in production:**
+| Role | Why |
+|---|---|
+| `roles/dataflow.worker` | Run Dataflow workers |
+| `roles/dataflow.developer` | Create and monitor jobs |
+| `roles/bigquery.dataEditor` | Write data to BigQuery |
+| `roles/bigquery.jobUser` | Submit BigQuery jobs |
+| `roles/storage.objectAdmin` | Read/write files in GCS |
+| `roles/pubsub.subscriber` | Read messages from subscription |
+| `roles/iam.serviceAccountUser` | Impersonate SA during job submission |
+| `roles/run.developer` | Deploy Cloud Run services from CI/CD |
+| `roles/artifactregistry.writer` | Push Docker images to Artifact Registry |
 
-`storage.objectAdmin` grants the ability to delete objects, which the pipeline doesn't need. In production, `storage.objectCreator` + `storage.objectViewer` would be sufficient. The broader role was used here for development convenience.
+### `finpipe-api-sa`
 
-`iam.serviceAccountUser` is granted at project level, meaning the SA can act as any other service account in the project. The correct approach is to grant it at the level of the specific service account. Acceptable for a learning project, not for production.
+Runs the Cloud Run API. Least-privilege — read-only access to BigQuery and publish to Pub/Sub.
 
-`pubsub.subscriber` is granted twice — at project level via Terraform and at subscription level via `gcloud` manually. This is redundant. Ideally it should only be granted at subscription level, which is the more precise scope.
+| Role | Why |
+|---|---|
+| `roles/bigquery.dataViewer` | Read transactions and anomalies |
+| `roles/bigquery.jobUser` | Submit BigQuery queries |
+| `roles/pubsub.publisher` | Publish transactions via `POST /transactions` |
 
 ## Key design decisions
 
@@ -177,18 +235,21 @@ Dataflow jobs run under a dedicated service account `dataflow-banking-sa`, not u
 
 **Two separate pipelines** — streaming and batch are intentionally split. The batch pipeline has a clear start and end, which makes it suitable for CI/CD and straightforward to monitor. The streaming pipeline runs indefinitely and is started manually when real-time processing is needed.
 
+**Separate service accounts** — Dataflow and the API run under different service accounts with different permission sets. The API SA (`finpipe-api-sa`) has no write access to BigQuery and cannot manage infrastructure.
+
 ## CI/CD
 
 | Trigger | Job | What it does |
 |---|---|---|
 | Every PR | `terraform-validate` | `terraform fmt -check` + `terraform validate` |
-| Push to `main` | `terraform-validate` + `deploy-batch-pipeline` | Validates Terraform, deploys the batch Dataflow job, waits for it to finish |
+| Push to `main` | `deploy-batch-pipeline` | Runs batch Dataflow job, moves processed files to `batch/processed/` |
+| Push to `main` | `deploy-cloud-run` | Builds Docker image, pushes to Artifact Registry, deploys to Cloud Run |
 
-The streaming pipeline is intentionally excluded from CI/CD.
+Both deploy jobs run in parallel after `terraform-validate` passes.
 
 Required GitHub secrets:
 - `GCP_PROJECT_ID`
-- `GCP_SA_KEY` — service account JSON key
+- `GCP_SA_KEY` — JSON key for `dataflow-banking-sa`
 
 ## Cost management
 
@@ -204,6 +265,8 @@ gcloud dataflow jobs cancel JOB_ID --region europe-west1
 
 Estimated cost for an active development session (~2 hours):
 - Dataflow (n1-standard-2): ~$0.10
+- Cloud Run: ~$0.00 (first 2M requests/month free)
 - BigQuery: $0 (first 10 GB/month free)
 - Pub/Sub: $0 (first 10 GB/month free)
 - GCS: ~$0.01
+- Artifact Registry: ~$0.01
