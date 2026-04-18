@@ -78,7 +78,7 @@ jobs:
         run: |
           gsutil -m mv \
             gs://$PROJECT_ID-transactions-raw/batch/*.json \
-            gs://$PROJECT_ID-transactions-raw/batch/processed/
+            gs://$PROJECT_ID-transactions-raw/batch/processed/ || true
 
   deploy-cloud-run:
     name: Deploy Cloud Run API
