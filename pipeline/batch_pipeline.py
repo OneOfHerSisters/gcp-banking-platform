@@ -27,6 +27,7 @@ import os
 
 import apache_beam as beam
 from apache_beam.io import ReadFromText
+from apache_beam.io.filesystems import FileSystems
 from apache_beam.io.gcp.bigquery import WriteToBigQuery, BigQueryDisposition
 from apache_beam.metrics import Metrics
 from apache_beam.options.pipeline_options import (
@@ -171,6 +172,14 @@ def run(argv=None):
     )
 
     known_args, pipeline_args = parser.parse_known_args(argv)
+
+    match = FileSystems.match([known_args.input_path])
+    if not match or not match[0].metadata_list:
+        logging.info("No files to process at %s — exiting.", known_args.input_path)
+        return
+
+    logging.info("Found %d file(s) to process.", len(match[0].metadata_list))
+
     options = PipelineOptions(pipeline_args)
     # Batch mode — do NOT set streaming=True
     options.view_as(StandardOptions).streaming = False
