@@ -158,14 +158,14 @@ resource "google_artifact_registry_repository_iam_member" "cicd_ar_writer" {
 # Write Dataflow staging files to temp bucket
 resource "google_storage_bucket_iam_member" "cicd_storage_temp" {
   bucket = google_storage_bucket.dataflow_temp.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.cicd.email}"
 }
 
 # Move batch files after processing (gsutil mv on raw bucket)
 resource "google_storage_bucket_iam_member" "cicd_storage_raw" {
   bucket = google_storage_bucket.raw.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.cicd.email}"
 }
 
@@ -217,21 +217,21 @@ resource "google_bigquery_dataset_iam_member" "runtime_bq_editor" {
 # Read/write batch files — scoped to raw bucket
 resource "google_storage_bucket_iam_member" "runtime_storage_raw" {
   bucket = google_storage_bucket.raw.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.runtime.email}"
 }
 
 # Read/write processed files — scoped to processed bucket
 resource "google_storage_bucket_iam_member" "runtime_storage_processed" {
   bucket = google_storage_bucket.processed.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.runtime.email}"
 }
 
 # Read/write temp files — scoped to temp bucket
 resource "google_storage_bucket_iam_member" "runtime_storage_temp" {
   bucket = google_storage_bucket.dataflow_temp.name
-  role   = "roles/storage.objectAdmin"
+  role   = "roles/storage.objectUser"
   member = "serviceAccount:${google_service_account.runtime.email}"
 }
 
