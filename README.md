@@ -197,31 +197,45 @@ Looker Studio dashboard: https://datastudio.google.com/reporting/c1efa3fb-a4a0-4
 
 ## IAM — service accounts
 
-### `dataflow-banking-sa`
+Three dedicated service accounts, each with the minimum permissions needed for its role.
 
-Runs Dataflow jobs and deploys from CI/CD.
+### `cicd-deployer-sa`
 
-| Role | Why |
+Used by GitHub Actions. Deploys Dataflow jobs and Cloud Run, pushes Docker images.
+
+| Role | Scope |
 |---|---|
-| `roles/dataflow.worker` | Run Dataflow workers |
-| `roles/dataflow.developer` | Create and monitor jobs |
-| `roles/bigquery.dataEditor` | Write data to BigQuery |
-| `roles/bigquery.jobUser` | Submit BigQuery jobs |
-| `roles/storage.objectAdmin` | Read/write files in GCS |
-| `roles/pubsub.subscriber` | Read messages from subscription |
-| `roles/iam.serviceAccountUser` | Impersonate SA during job submission |
-| `roles/run.developer` | Deploy Cloud Run services from CI/CD |
-| `roles/artifactregistry.writer` | Push Docker images to Artifact Registry |
+| `roles/dataflow.developer` | Project |
+| `roles/run.developer` | Project |
+| `roles/artifactregistry.writer` | Artifact Registry repository |
+| `roles/storage.objectUser` | `dataflow-temp` bucket (staging files) |
+| `roles/storage.objectUser` | `transactions-raw` bucket (gsutil mv) |
+| `roles/iam.serviceAccountUser` | `dataflow-runtime-sa` only |
+| `roles/iam.serviceAccountUser` | `finpipe-api-sa` only |
+
+### `dataflow-runtime-sa`
+
+Runs Dataflow workers. No CI/CD or API permissions.
+
+| Role | Scope |
+|---|---|
+| `roles/dataflow.worker` | Project |
+| `roles/bigquery.jobUser` | Project |
+| `roles/bigquery.dataEditor` | Dataset `banking_platform` |
+| `roles/storage.objectUser` | `transactions-raw` bucket |
+| `roles/storage.objectUser` | `transactions-processed` bucket |
+| `roles/storage.objectUser` | `dataflow-temp` bucket |
+| `roles/pubsub.subscriber` | Subscription `banking-transactions-dataflow` |
 
 ### `finpipe-api-sa`
 
-Runs the Cloud Run API. Least-privilege — read-only access to BigQuery and publish to Pub/Sub.
+Runs the Cloud Run API. Read-only BigQuery, publish to one Pub/Sub topic.
 
-| Role | Why |
+| Role | Scope |
 |---|---|
-| `roles/bigquery.dataViewer` | Read transactions and anomalies |
-| `roles/bigquery.jobUser` | Submit BigQuery queries |
-| `roles/pubsub.publisher` | Publish transactions via `POST /transactions` |
+| `roles/bigquery.dataViewer` | Dataset `banking_platform` |
+| `roles/bigquery.jobUser` | Project |
+| `roles/pubsub.publisher` | Topic `banking-transactions` |
 
 ## Key design decisions
 
