@@ -18,6 +18,14 @@ output "bigquery_dataset" {
   value = google_bigquery_dataset.banking.dataset_id
 }
 
-output "dataflow_sa_email" {
-  value = google_service_account.dataflow.email
+output "cicd_sa_email" {
+  value = google_service_account.cicd.email
+}
+
+output "dataflow_runtime_sa_email" {
+  value = google_service_account.runtime.email
+}
+
+output "api_sa_email" {
+  value = google_service_account.api.email
 }

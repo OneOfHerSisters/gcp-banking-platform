@@ -71,7 +71,7 @@ jobs:
             --temp_location=gs://$PROJECT_ID-dataflow-temp/temp \
             --input_path=gs://$PROJECT_ID-transactions-raw/batch/*.json \
             --anomaly_amount_threshold=$ANOMALY_AMOUNT_THRESHOLD \
-            --service_account_email=dataflow-banking-sa@$PROJECT_ID.iam.gserviceaccount.com \
+            --service_account_email=dataflow-runtime-sa@$PROJECT_ID.iam.gserviceaccount.com \
             --job_name=banking-batch-pipeline
 
       - name: Move processed files to batch/processed/

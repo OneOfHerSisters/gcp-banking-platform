@@ -114,69 +114,6 @@ resource "google_pubsub_subscription" "dataflow" {
 }
 
 # ──────────────────────────────────────────
-# Service Account for Dataflow
-# ──────────────────────────────────────────
-
-resource "google_service_account" "dataflow" {
-  account_id   = "dataflow-banking-sa"
-  display_name = "Dataflow Banking Service Account"
-}
-
-resource "google_project_iam_member" "dataflow_worker" {
-  project = var.project_id
-  role    = "roles/dataflow.worker"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "dataflow_developer" {
-  project = var.project_id
-  role    = "roles/dataflow.developer"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "bigquery_editor" {
-  project = var.project_id
-  role    = "roles/bigquery.dataEditor"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "storage_admin" {
-  project = var.project_id
-  role    = "roles/storage.objectAdmin"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_pubsub_subscription_iam_member" "dataflow_subscriber" {
-  subscription = google_pubsub_subscription.dataflow.name
-  role         = "roles/pubsub.subscriber"
-  member       = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "sa_user" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "bigquery_job_user" {
-  project = var.project_id
-  role    = "roles/bigquery.jobUser"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "run_developer" {
-  project = var.project_id
-  role    = "roles/run.developer"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-resource "google_project_iam_member" "artifact_registry_writer" {
-  project = var.project_id
-  role    = "roles/artifactregistry.writer"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-# ──────────────────────────────────────────
 # Artifact Registry
 # ──────────────────────────────────────────
 
@@ -187,7 +124,127 @@ resource "google_artifact_registry_repository" "api" {
 }
 
 # ──────────────────────────────────────────
-# Service Account for Cloud Run API
+# Service Account: cicd-deployer-sa
+# Used by GitHub Actions to deploy Dataflow jobs and Cloud Run.
+# ──────────────────────────────────────────
+
+resource "google_service_account" "cicd" {
+  account_id   = "cicd-deployer-sa"
+  display_name = "CI/CD Deployer Service Account"
+}
+
+# Submit Dataflow jobs
+resource "google_project_iam_member" "cicd_dataflow_developer" {
+  project = var.project_id
+  role    = "roles/dataflow.developer"
+  member  = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# Deploy Cloud Run services
+resource "google_project_iam_member" "cicd_run_developer" {
+  project = var.project_id
+  role    = "roles/run.developer"
+  member  = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# Push Docker images — scoped to specific repository
+resource "google_artifact_registry_repository_iam_member" "cicd_ar_writer" {
+  location   = google_artifact_registry_repository.api.location
+  repository = google_artifact_registry_repository.api.repository_id
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# Write Dataflow staging files to temp bucket
+resource "google_storage_bucket_iam_member" "cicd_storage_temp" {
+  bucket = google_storage_bucket.dataflow_temp.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# Move batch files after processing (gsutil mv on raw bucket)
+resource "google_storage_bucket_iam_member" "cicd_storage_raw" {
+  bucket = google_storage_bucket.raw.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# Impersonate Dataflow runtime SA when submitting jobs
+resource "google_service_account_iam_member" "cicd_sa_user_runtime" {
+  service_account_id = google_service_account.runtime.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# Impersonate API SA when deploying Cloud Run
+resource "google_service_account_iam_member" "cicd_sa_user_api" {
+  service_account_id = google_service_account.api.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.cicd.email}"
+}
+
+# ──────────────────────────────────────────
+# Service Account: dataflow-runtime-sa
+# Runs Dataflow workers. No CI/CD or Cloud Run permissions.
+# ──────────────────────────────────────────
+
+resource "google_service_account" "runtime" {
+  account_id   = "dataflow-runtime-sa"
+  display_name = "Dataflow Runtime Service Account"
+}
+
+# Run Dataflow workers
+resource "google_project_iam_member" "runtime_dataflow_worker" {
+  project = var.project_id
+  role    = "roles/dataflow.worker"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# Submit BigQuery load jobs from within the pipeline
+resource "google_project_iam_member" "runtime_bq_job_user" {
+  project = var.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# Write to BigQuery — scoped to dataset
+resource "google_bigquery_dataset_iam_member" "runtime_bq_editor" {
+  dataset_id = google_bigquery_dataset.banking.dataset_id
+  role       = "roles/bigquery.dataEditor"
+  member     = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# Read/write batch files — scoped to raw bucket
+resource "google_storage_bucket_iam_member" "runtime_storage_raw" {
+  bucket = google_storage_bucket.raw.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# Read/write processed files — scoped to processed bucket
+resource "google_storage_bucket_iam_member" "runtime_storage_processed" {
+  bucket = google_storage_bucket.processed.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# Read/write temp files — scoped to temp bucket
+resource "google_storage_bucket_iam_member" "runtime_storage_temp" {
+  bucket = google_storage_bucket.dataflow_temp.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# Read messages from Pub/Sub — scoped to subscription
+resource "google_pubsub_subscription_iam_member" "runtime_subscriber" {
+  subscription = google_pubsub_subscription.dataflow.name
+  role         = "roles/pubsub.subscriber"
+  member       = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+# ──────────────────────────────────────────
+# Service Account: finpipe-api-sa
+# Runs the Cloud Run API. Read-only BigQuery, publish to Pub/Sub only.
 # ──────────────────────────────────────────
 
 resource "google_service_account" "api" {
@@ -195,22 +252,25 @@ resource "google_service_account" "api" {
   display_name = "FinPipe API Service Account"
 }
 
-resource "google_project_iam_member" "api_bq_viewer" {
-  project = var.project_id
-  role    = "roles/bigquery.dataViewer"
-  member  = "serviceAccount:${google_service_account.api.email}"
+# Read transactions and anomalies — scoped to dataset
+resource "google_bigquery_dataset_iam_member" "api_bq_viewer" {
+  dataset_id = google_bigquery_dataset.banking.dataset_id
+  role       = "roles/bigquery.dataViewer"
+  member     = "serviceAccount:${google_service_account.api.email}"
 }
 
+# Submit BigQuery queries
 resource "google_project_iam_member" "api_bq_job_user" {
   project = var.project_id
   role    = "roles/bigquery.jobUser"
   member  = "serviceAccount:${google_service_account.api.email}"
 }
 
-resource "google_project_iam_member" "api_pubsub_publisher" {
-  project = var.project_id
-  role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:${google_service_account.api.email}"
+# Publish transactions via POST /transactions — scoped to topic
+resource "google_pubsub_topic_iam_member" "api_publisher" {
+  topic  = google_pubsub_topic.transactions.name
+  role   = "roles/pubsub.publisher"
+  member = "serviceAccount:${google_service_account.api.email}"
 }
 
 # ──────────────────────────────────────────
