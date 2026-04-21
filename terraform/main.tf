@@ -162,6 +162,13 @@ resource "google_storage_bucket_iam_member" "cicd_storage_temp" {
   member = "serviceAccount:${google_service_account.cicd.email}"
 }
 
+# Read bucket metadata — required by Beam SDK to stage files (storage.buckets.get)
+resource "google_storage_bucket_iam_member" "cicd_storage_temp_reader" {
+  bucket = google_storage_bucket.dataflow_temp.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.cicd.email}"
+}
+
 # Move batch files after processing (gsutil mv on raw bucket)
 resource "google_storage_bucket_iam_member" "cicd_storage_raw" {
   bucket = google_storage_bucket.raw.name
