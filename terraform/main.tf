@@ -242,6 +242,13 @@ resource "google_pubsub_subscription_iam_member" "runtime_subscriber" {
   member       = "serviceAccount:${google_service_account.runtime.email}"
 }
 
+# Read subscription configuration — required by Dataflow to check ack deadline
+resource "google_pubsub_subscription_iam_member" "runtime_subscriber_viewer" {
+  subscription = google_pubsub_subscription.dataflow.name
+  role         = "roles/pubsub.viewer"
+  member       = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 # ──────────────────────────────────────────
 # Service Account: finpipe-api-sa
 # Runs the Cloud Run API. Read-only BigQuery, publish to Pub/Sub only.
@@ -301,6 +308,14 @@ resource "google_cloud_run_v2_service" "api" {
         value = google_bigquery_dataset.banking.dataset_id
       }
     }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image,
+      client,
+      client_version,
+    ]
   }
 }
 
